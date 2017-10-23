@@ -1,2 +1,6 @@
-*.hi
-*.o
+*
+
+!*/
+!*.lhs
+!*.hs
+!.gitignore

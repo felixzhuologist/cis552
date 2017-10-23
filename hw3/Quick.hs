@@ -14,6 +14,7 @@ import Data.List as List
 import Data.Maybe as Maybe
 
 import Test.QuickCheck
+import Test.HUnit (Test (TestList), (~:), (~?=), runTestTT)
 import Control.Monad (liftM, liftM2)
 import System.Random (Random)
 
@@ -116,6 +117,12 @@ listPropertiesMain = do
 -- Using QuickCheck to debug a SAT solver
 
 --------------------------------------------------------------------------- 
+runUnitTestsMain :: IO ()
+runUnitTestsMain = do
+  _ <- runTestTT $ TestList [ tCombinations,
+                              tMakeValuations ]
+  return ()
+
 -- Basic types
 
 -- | An expression in CNF (conjunctive normal form) is a conjunction
@@ -242,8 +249,27 @@ value = Map.lookup
 
 type Solver = CNF -> Maybe Valuation
 
+-- | Return all possible lists which consist of exactly one element from each 
+-- sublist in the input. Assumes none of the sublists are empty.
+combinations :: [[a]] -> [[a]]
+combinations [] = []
+combinations [x] = map (:[]) x
+combinations (x:xs) = concat $ map f (combinations xs)
+  where f recResult = map (:recResult) x
+
+tCombinations :: Test
+tCombinations = "combinations" ~:
+  TestList [Set.fromList (combinations [[3, 4]]) ~?= Set.fromList ([[3], [4]]),
+            Set.fromList (combinations [[1, 2], [3, 4]]) ~?= Set.fromList ([[1, 3], [1, 4], [2, 3], [2, 4]])]
+
 makeValuations :: Set Var -> [Valuation]
-makeValuations = undefined
+makeValuations v = map fromList $ combinations $ map possibilities $ Set.toList v
+  where possibilities v' = [(v', True), (v', False)]
+
+tMakeValuations :: Test
+tMakeValuations = "makeValuations" ~:
+  TestList [makeValuations (Set.singleton (Var 'a')) ~?= [fromList [(Var 'a', True)],
+                                                          fromList [(Var 'a', False)]]]
 
 prop_makeValuations :: CNF -> Bool
 prop_makeValuations p = length valuations == 2 ^ Set.size ss

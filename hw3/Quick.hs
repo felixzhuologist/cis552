@@ -121,6 +121,8 @@ runUnitTestsMain :: IO ()
 runUnitTestsMain = do
   _ <- runTestTT $ TestList [ tCombinations,
                               tMakeValuations ]
+  _ <- quickCheck prop_makeValuations
+  _ <- quickCheck (prop_satResultSound sat0 5)
   return ()
 
 -- Basic types
@@ -252,7 +254,7 @@ type Solver = CNF -> Maybe Valuation
 -- | Return all possible lists which consist of exactly one element from each 
 -- sublist in the input. Assumes none of the sublists are empty.
 combinations :: [[a]] -> [[a]]
-combinations [] = []
+combinations [] = [[]]
 combinations [x] = map (:[]) x
 combinations (x:xs) = concat $ map f (combinations xs)
   where f recResult = map (:recResult) x
@@ -282,8 +284,9 @@ allElementsDistinct []     = True
 allElementsDistinct (x:xs) = notElem x xs &&
                              allElementsDistinct xs
 
+-- | Brute force solver that tries all possibilities
 sat0 :: Solver
-sat0 = undefined
+sat0 cnf = find (cnf `satisfiedBy`) (makeValuations $ vars cnf)
 
 prop_satResultSound :: Solver -> Int -> Property
 prop_satResultSound solver i = 
@@ -304,11 +307,16 @@ prop_satResult solver p = case solver p of
 -- Instantiation
 
 instantiate :: CNF -> Var -> Bool -> CNF
-instantiate = undefined
+instantiate cnf v val = undefined
+-- if var is in clause and value is true, remove clause
+-- if var is in clause and value is false, remove all instances of var from that clause
 
+-- | property that checks that if s is a formula and v is a variable, then
+-- s satisfiable <=> (instantiate s v True || instantiate s v False)
 prop_instantiate :: CNF -> Var -> Bool
-prop_instantiate = undefined
-
+prop_instantiate cnf v =
+  satisfiable cnf == (satisfiable $ instantiate cnf v True) || (satisfiable $ instantiate cnf v False)
+    where satisfiable = isJust . sat0
 
 sat1 :: Solver
 sat1 = sat where

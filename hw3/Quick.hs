@@ -120,9 +120,15 @@ listPropertiesMain = do
 runUnitTestsMain :: IO ()
 runUnitTestsMain = do
   _ <- runTestTT $ TestList [ tCombinations,
-                              tMakeValuations ]
+                              tMakeValuations,
+                              tSimplify ]
   _ <- quickCheck prop_makeValuations
+  _ <- quickCheck (prop_satResult sat0)
   _ <- quickCheck (prop_satResultSound sat0 5)
+  _ <- quickCheck prop_instantiate
+  -- _ <- quickCheck (prop_satResult sat1)
+  -- _ <- quickCheck (prop_satResultSound sat1 5)
+  -- _ <- quickCheck (prop_sat1)
   return ()
 
 -- Basic types
@@ -234,8 +240,11 @@ exampleValuation = Map.fromList [(vA, False), (vB, True), (vC, True)]
 litSatisfied :: Valuation -> Lit -> Bool
 litSatisfied a (Lit b v) = Map.member v a && (b == a Map.! v)
 
+clauseSatisfied :: Valuation -> [Lit] -> Bool
+clauseSatisfied a = any $ litSatisfied a
+
 satisfiedBy :: CNF -> Valuation -> Bool
-satisfiedBy p a = all (any (litSatisfied a) . lits) p
+satisfiedBy p a = all (clauseSatisfied a . lits) p
 
 prop_satisfiedBy :: Bool
 prop_satisfiedBy = exampleFormula `satisfiedBy` exampleValuation
@@ -307,9 +316,20 @@ prop_satResult solver p = case solver p of
 -- Instantiation
 
 instantiate :: CNF -> Var -> Bool -> CNF
-instantiate cnf v val = undefined
--- if var is in clause and value is true, remove clause
--- if var is in clause and value is false, remove all instances of var from that clause
+instantiate cnf v val = filter (not . null . lits) (map (Clause . (simplify v val) . lits) cnf)
+
+-- | Given variable and its value, simplify disjunction
+simplify :: Var -> Bool -> [Lit] -> [Lit]
+simplify v val ls
+  | clauseSatisfied (fromList [(v, val)]) ls = []
+  | not $ elem v $ map var ls                = ls
+  | otherwise                                = filter (\lit -> v /= (var lit)) ls 
+
+tSimplify :: Test
+tSimplify = "simplify disjunction" ~:
+  TestList [simplify vA True [(Lit True vA), (Lit False vB), (Lit True vD)] ~?= [],
+            simplify vA True [(Lit False vA), (Lit True vB)] ~?= [(Lit False vA), (Lit True vB)],
+            simplify vA True [(Lit True vD)] ~?= [(Lit True vD)]]
 
 -- | property that checks that if s is a formula and v is a variable, then
 -- s satisfiable <=> (instantiate s v True || instantiate s v False)
@@ -319,8 +339,20 @@ prop_instantiate cnf v =
     where satisfiable = isJust . sat0
 
 sat1 :: Solver
-sat1 = sat where
-  sat = undefined
+sat1 = sat1' $ fromList []
+
+sat1' :: Valuation -> CNF -> Maybe Valuation
+sat1' valuation formula 
+  | formula `satisfiedBy` valuation    = Just valuation
+  | null $ vars formula                = Nothing
+  | not $ unsatisfiable t              = sat1' (extend nextVar True valuation) t
+  | not $ unsatisfiable f              = sat1' (extend nextVar False valuation) f
+  | otherwise                          = Nothing
+  where
+    availVars = Set.toList $ vars formula
+    nextVar = head availVars
+    t = instantiate formula nextVar True
+    f = instantiate formula nextVar False
 
 prop_sat1 :: CNF -> Bool
 prop_sat1 s = isJust (sat1 s) == isJust (sat0 s)

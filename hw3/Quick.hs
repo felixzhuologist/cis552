@@ -128,6 +128,8 @@ runUnitTestsMain = do
   _ <- quickCheck (prop_satResult sat1)
   _ <- quickCheck (prop_satResultSound sat1 5)
   _ <- quickCheck (prop_sat1)
+  _ <- quickCheck (prop_simplifyUnitClause)
+  _ <- quickCheck (prop_sat2)
   return ()
 
 -- Basic types
@@ -357,16 +359,37 @@ simplifyUnitClause :: CNF -> Maybe (CNF, Var, Bool)
 --    are no remaining unit clauses in s.
 -- 2) If it returns (Just s'), then s' is satisfiable iff s is.
 prop_simplifyUnitClause :: CNF -> Bool
-prop_simplifyUnitClause = undefined
+prop_simplifyUnitClause s = case (simplifyUnitClause s) of
+  (Just (s', _, _)) -> unsatisfiable s == unsatisfiable s'
+  _ -> null $ unitClauses s
 
 unitClauses :: CNF -> [Lit]
-unitClauses = undefined
+unitClauses = concat . map lits . (filter ((==1) . length . lits))
 
-simplifyUnitClause = undefined
+simplifyUnitClause cnf = case (unitClauses cnf) of
+  []     -> Nothing
+  (x:_) -> Just ((instantiate cnf v b), v, b) where
+    v = var x
+    b = isPos x 
 
 sat2 :: Solver
-sat2 = sat where
-  sat = undefined
+sat2 = sat2' $ fromList []
+
+sat2' :: Valuation -> CNF -> Maybe Valuation
+sat2' valuation formula
+  | formula `satisfiedBy` valuation    = Just valuation
+  | null $ availVars                   = Nothing
+  | isJust unitS                       = let (u, next, val) = fromJust unitS
+                                             in sat1' (extend next val valuation) u
+  | not $ unsatisfiable t              = sat1' (extend nextVar True valuation) t
+  | not $ unsatisfiable f              = sat1' (extend nextVar False valuation) f
+  | otherwise                          = Nothing
+  where
+    availVars = Set.toList $ Set.difference (vars formula) (Map.keysSet valuation)
+    nextVar = head availVars
+    unitS = simplifyUnitClause formula
+    t = instantiate formula nextVar True
+    f = instantiate formula nextVar False
 
 prop_sat2 :: CNF -> Bool
 prop_sat2 s = isJust (sat2 s) == isJust (sat0 s)

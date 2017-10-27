@@ -121,15 +121,9 @@ runUnitTestsMain :: IO ()
 runUnitTestsMain = do
   _ <- runTestTT $ TestList [ tCombinations,
                               tMakeValuations ]
-  _ <- quickCheck prop_makeValuations
-  _ <- quickCheck (prop_satResult sat0)
-  _ <- quickCheck (prop_satResultSound sat0 5)
-  _ <- quickCheck prop_instantiate
-  _ <- quickCheck (prop_satResult sat1)
-  _ <- quickCheck (prop_satResultSound sat1 5)
-  _ <- quickCheck (prop_sat1)
-  _ <- quickCheck (prop_simplifyUnitClause)
-  _ <- quickCheck (prop_sat2)
+  _ <- quickCheck prop_simplifyPureLiteral
+  _ <- quickCheck prop_dpll
+  _ <- quickCheck prop_isSatisfiable
   return ()
 
 -- Basic types
@@ -380,9 +374,9 @@ sat2' valuation formula
   | formula `satisfiedBy` valuation    = Just valuation
   | null $ availVars                   = Nothing
   | isJust unitS                       = let (u, next, val) = fromJust unitS
-                                             in sat1' (extend next val valuation) u
-  | not $ unsatisfiable t              = sat1' (extend nextVar True valuation) t
-  | not $ unsatisfiable f              = sat1' (extend nextVar False valuation) f
+                                             in sat2' (extend next val valuation) u
+  | not $ unsatisfiable t              = sat2' (extend nextVar True valuation) t
+  | not $ unsatisfiable f              = sat2' (extend nextVar False valuation) f
   | otherwise                          = Nothing
   where
     availVars = Set.toList $ Set.difference (vars formula) (Map.keysSet valuation)
@@ -403,19 +397,49 @@ simplifyPureLiteral :: CNF -> Maybe (CNF, Var, Bool)
 --    are no remaining pure literals in s
 -- 2) If it returns (Just s'), then s' is satisfiable iff s is
 prop_simplifyPureLiteral :: CNF -> Bool
-prop_simplifyPureLiteral = undefined
-
-
+prop_simplifyPureLiteral s = case (simplifyPureLiteral s) of
+  (Just (s', _, _)) -> unsatisfiable s' == unsatisfiable s
+  _ -> null $ pureLiterals s
 
 pureLiterals :: CNF -> [(Var,Bool)]
-pureLiterals = undefined
+pureLiterals s = catMaybes $ map (pureVal s) (Set.toList $ vars s) 
 
-simplifyPureLiteral = undefined
+-- | return Just value of literal if it's pure, Nothing otherwise
+pureVal :: CNF -> Var -> Maybe (Var, Bool)
+pureVal s v
+  | null instances    = Nothing
+  | allSame instances = Just (v, head instances)
+  | otherwise         = Nothing 
+  where
+    instances = map isPos $ filter ((==v) . var) $ concatMap lits s
+    allSame xs = (all id xs) || (all not xs)
+
+simplifyPureLiteral s = case (pureLiterals s) of
+  [] -> Nothing
+  ((v,b):_) -> Just ((instantiate s v b), v, b)
 
 -- The final DPLL algorithm:
 dpll :: Solver
-dpll = sat where
-  sat = undefined
+dpll = dpll' $ fromList []
+
+dpll' :: Valuation -> CNF -> Maybe Valuation
+dpll' valuation formula
+  | formula `satisfiedBy` valuation    = Just valuation
+  | null $ availVars                   = Nothing
+  | isJust unitS                       = let (u, next, val) = fromJust unitS
+                                             in dpll' (extend next val valuation) u
+  | isJust pureS                       = let (p, next, val) = fromJust pureS
+                                             in dpll' (extend next val valuation) p
+  | not $ unsatisfiable t              = dpll' (extend nextVar True valuation) t
+  | not $ unsatisfiable f              = dpll' (extend nextVar False valuation) f
+  | otherwise                          = Nothing
+  where
+    availVars = Set.toList $ Set.difference (vars formula) (Map.keysSet valuation)
+    nextVar = head availVars
+    unitS = simplifyUnitClause formula
+    pureS = simplifyPureLiteral formula
+    t = instantiate formula nextVar True
+    f = instantiate formula nextVar False
 
 prop_dpll :: CNF -> Bool
 prop_dpll s = isJust (dpll s) == isJust (sat0 s)
@@ -424,13 +448,13 @@ prop_dpll s = isJust (dpll s) == isJust (sat0 s)
 -- Using QC as a SAT solver
 
 instance Arbitrary (Map Var Bool) where
-  arbitrary = undefined
-  shrink = undefined
+  arbitrary = liftM (fromList . zip allVars) (vectorOf 26 arbitrary)
+  -- list of valuations which are the same but with one var removed
+  shrink v = map (flip Map.delete v) $ filter (flip Map.member v) allVars
 
 prop_isSatisfiable :: CNF -> Property
-prop_isSatisfiable = undefined
- 
-
+prop_isSatisfiable cnf = (not . null . vars) cnf ==>
+  expectFailure $ forAll arbitrary (not . satisfiedBy cnf) 
 
 ------------------------------------------------------------------------------
 -- All the tests in one convenient place:

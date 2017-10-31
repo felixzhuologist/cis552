@@ -139,7 +139,7 @@ And satisfies the binary search tree condition.
 > prop_BST = prop_BST' (minBound :: Int) (maxBound :: Int)
 
 > prop_BST' :: Int -> Int -> RBT Int -> Bool
-> prop_BST' lb ub (N _ l x r) = x >= lb && x <= ub && (prop_BST' lb x l) && (prop_BST' x ub r)
+> prop_BST' lb ub (N _ l x r) = x > lb && x < ub && (prop_BST' lb x l) && (prop_BST' x ub r)
 > prop_BST' _ _ E = True
 
 To use quickcheck, we need an arbitrary instance. We'll use the one 
@@ -197,7 +197,8 @@ Set class for this data structure.
 >     | otherwise = True
 
 >   elements :: Ord a => RBT a -> [a]
->   elements t = undefined
+>   elements E = []
+>   elements (N _ l x r) = elements l ++ [x] ++ elements r
 
 Insertion, is, of course a bit trickier. 
 
@@ -213,7 +214,7 @@ function `ins` walks down the tree until...
 it constructs a new (red) node containing the
 value being inserted...
 
-> ins x E = undefined
+> ins x E = (N R E x E)
 
 ... or discovers that the value being inserted is
 already in the tree, in which case it returns 
@@ -262,6 +263,10 @@ to a red parent with black children.
 four ways in which such a path can happen.
 
 > balance :: RBT a -> RBT a 
+> balance (N B (N R (N R lll x llr) y lr) z r) = (N R (N B lll x llr) y (N B lr z r))
+> -- balance (N B (N R ll y (N R lrl x lrr)) z r) = 
+> -- balance (N B l z (N R (N R rll x rlr) y rr))
+> -- balance (N B l z (N R rl y (N R rrl x rrr)))
 > balance t = t
 
 

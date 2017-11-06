@@ -129,7 +129,9 @@ instance (Eq a) => Eq (AVL a) where
   (==) _ _ = False
 
 instance (Ord e, Arbitrary e) => Arbitrary (AVL e) where
-    arbitrary = undefined
+    arbitrary = g where
+      g :: forall a. (Ord a, Arbitrary a) => Gen (RBT a)
+      g = liftM (foldr insert empty) (arbitrary :: Gen [a])
 
 -- | an empty AVL tree
 avlEmpty :: AVL e
@@ -148,37 +150,83 @@ avlMember x (N _ l y r)
   | x > y     = avlMember x r
   | otherwise = True
 
+t0 :: AVL Int
+t0 = E
+
 t1 :: AVL Int
-t1 = undefined
+t1 = N 1 E 1 E
 
 t2 :: AVL Int
-t2 = undefined
+t2 = N 2 (N 1 E 2 E) 5 E
 
 t3 :: AVL Int
-t3 = undefined
+t3 = N 3 (N 2 (N 1 E 3 E) (N 1 E 7 E)) 10 (N 2 (N 1 E 11 E) 13 E)
 
+-- unbalanced
 bad1 :: AVL Int
-bad1 = undefined
+bad1 = N 3 (N 2 (N 1 E 0 E) 1 E) 2 E
 
+-- wrong height
 bad2 :: AVL Int
-bad2 = undefined
+bad2 = N 5 E 1 E
 
+-- not BST
 bad3 :: AVL Int
-bad3 = undefined
+bad3 = N 2 E 3 (N 1 E 0 E)
 
 
+-- 4 rotation cases:
+-- outside (right)
+
+--    10                     15
+--   /  \                   /  \
+--  5    15                10   17
+--      /  \              / \   / 
+--     11   17           5  11 16
+--         /
+--        16
+
+-- inside (right)
+
+--    10                     10                        12
+--   /  \                   /  \                      /  \
+--  5    15                5   12                    10   15 
+--      /  \                  /  \                  /  \  / \
+--     12   17               11  15                5  11 12  17
+--    /                            \
+--   11                            17
 
 -- | Rotate an AVL tree 
+-- take tree whose root node has balance factor -2 or +2 and rearrange it to
+-- an equivalent tree with -1/0/+1 balance factors
 rebalance :: (Ord e) => AVL e -> AVL e
-rebalance = undefined
+rebalance t@(N _ l x r) =
+  | bf t == -2 && bf r == -1 = outsideRight t
+  | bf t == -2 && bf r == 1 = insideRight t
+  | bf t == 2 && bf l == -1 = insideLeft t
+  | bf t == 2 && bf l == 1 = outsideLeft t
+  | otherwise = t
+
+outsideRight (N _ t1 A (N _ t2 B (N _ t3 C t4))) = N _ (N _ t1 A t2) B (N _ t3 C t4)
+insideRight (N _ t1 A (N _ (N _ t2 C t3) t4)) = N _ (N _ t1 A t2) C (N _ t3 B t4)
 
 -- | Insert a new element into a tree, returning a new tree
 avlInsert :: (Ord e) => e -> AVL e -> AVL e
-avlInsert = undefined
+avlInsert y t@(N h l x r) =
+  | x < y = rebalance $ (N insLeftHeight insLeft x r)
+  | x > y = rebalance $ (N insRightHeight l x insRight)
+  | otherwise = t
+  where
+    insLeftHeight = max h $ height insLeft
+    insRightHeight = max h $ height insRight
+    insLeft = avlInsert y l
+    insRight = avlInsert y r
+avlInsert y _ = N 1 E y E
 
 -- | Delete the provided element from the tree
 avlDelete :: Ord e => e -> AVL e -> AVL e
-avlDelete = undefined
+avlDelete y t@(N h l x r) = undefined
+
 
 
 

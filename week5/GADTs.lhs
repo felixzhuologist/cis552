@@ -86,21 +86,37 @@ the `SExp` datatype.
 Now let's refine it:
 
 > data GExp t where
->   -- fill in!
+>   GInt :: Int -> GExp Int
+>   GBool :: Bool -> GExp Bool
+>   GAdd :: GExp Int -> GExp Int -> GExp Int
+>   GIsZero :: GExp Int -> GExp Bool
+>   GIf :: GExp Bool -> GExp u -> GExp u -> GExp u
 
 Note what's happened: every constrctor still returns some kind of
 `GExp`, but the type parameter to `GExp` is sometimes refined to
 something more specific than `t`.
 
-> -- add example terms here!
+> ge1 :: GExp Int
+> ge1 = GAdd (GInt 1) (GInt 3) 
+
+> ge2 :: GExp Int
+> ge2 = GIf (GBool True) (GInt 3) (GInt 4)
+
+-- > bad_ge1 :: GExp Int
+-- > bad_ge1 = GAdd (GBool True) (GInt 1)
+
+-- > bad_ge2 :: GExp Int
+-- > bad_ge2  = GInt True
 
 Now we can give our evaluator a more exact type and write it in a much
 clearer way:
 
 > evaluate :: GExp t -> t
-> evaluate = undefined 
-
-
+> evaluate (GInt i) = i
+> evaluate (GBool b) = b
+> evaluate (GAdd e1 e2) = (evaluate e1) + (evaluate e2)
+> evaluate (GIsZero e) = evaluate e == 0
+> evaluate (GIf cond e1 e2) = if evaluate cond then evaluate e1 else evaluate e2
 
 GADTs with DataKinds
 --------------------
@@ -159,7 +175,7 @@ function can now require that its argument be a nonempty list. If we
 try to give it an empty list, GHC will report a type error.
 
 > safeHd :: List NonEmpty a -> a
-> safeHd = undefined 
+> safeHd (Cons x _) = x
 
 
 (In fact, including a case for `Nil` is not only not needed: it is not
@@ -169,7 +185,8 @@ This flag doesn't interact much with some of the list functions. For
 example, `foldr` works for both empty and nonempty lists.
 
 > foldr' :: (a -> b -> b) -> b -> List f a -> b
-> foldr' = undefined 
+> foldr' _ y Nil = y
+> foldr' f y (Cons x xs) = foldr' f (f x y) xs
 
 
 But the `foldr1` variant (which assumes that the list is nonempty and
@@ -177,7 +194,8 @@ omits the "base" argument) can now _require_ that its argument be
 nonempty. 
 
 > foldr1' :: (a -> a -> a) -> List NonEmpty a -> a
-> foldr1' = undefined 
+> foldr1' f (Cons x Nil) = x
+> foldr1' f (Cons x xs@(Cons _ _)) = f x (foldr1' f xs)
 
 
 Note that, in the second pattern we have to explicitly match against
@@ -192,8 +210,8 @@ type check. (Though, sadly, it would still typecheck if we had two
 `Cons`es instead of one.)
 
 > map' :: (a -> b) -> List f a -> List f b
-> map' = undefined 
-
+> map' f (Cons x xs) = Cons (f x) (map' f xs)
+> map' _ Nil = Nil
 
 For `filter`, we don't know whether the output list will be empty or
 nonempty.  (Even if the input list is nonempty, the boolean test might
@@ -218,14 +236,18 @@ To go in the other direction -- from `OldList` to `List` -- we just
 use pattern matching.  For example:
 
 > isNonempty :: OldList a -> Maybe (List NonEmpty a)
-> isNonempty = undefined 
+> isNonempty (OL l@(Cons _ _)) = Just l
+> isNonempty _ = Nothing
 
 
 Now we can use `OldList` as the result of `filter'`, with a bit of
 additional pattern matching.
 
 > filter' :: (a -> Bool) -> List f a -> OldList a
-> filter' = undefined 
+> filter' p (Cons x xs) = if p x then case filter' p xs of
+>                                       (OL l) -> OL (Cons x l)
+>                                 else filter' p xs
+> filter' _ Nil = OL Nil
 
 
 

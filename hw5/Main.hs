@@ -6,8 +6,8 @@ module Main where
 import Prelude hiding (mapM,sequence)
 
 import Data.List()
-import Data.Maybe()
-import Data.Set (Set)
+import Data.Maybe (isJust)
+import Data.Set (Set, member)
 import qualified Data.Set as Set (singleton, fromList)
  
 import Control.Applicative(Alternative(..))
@@ -21,7 +21,6 @@ main :: IO ()
 main = return ()
 
 -------------------------------------------------------------------------
-
 -- (a) Define a monadic generalization of map 
 
 mapM :: Monad m => (a -> m b) -> [a] -> m [b]
@@ -328,12 +327,22 @@ split s = map (\n -> (take n s, drop n s)) [0..length s]
 -- all decompositions of a string into multi-part (nonempty) pieces
 -- parts "abc" = [["abc"],["a","bc"], ["ab","c"], ["a","b","c"]]
 parts :: [a] -> [[[a]]]
-parts = undefined
+-- need single empty list in the case of (s, "") when mapping in recursive case
+parts [] = [[]]
+parts [c] = [[[c]]]
+-- only "expand" recursively one of left/right so that you don't
+-- get duplicate results
+parts s = concatMap (\(l, r) -> map ([l]++) (parts r)) (tail $ split s)
 
 accept :: RegExp -> String -> Bool
-
 accept (Mark r)    s = accept r s
-accept _           _ = error "accept: finish me"
+accept (Char cs) [c] = member c cs
+accept (Alt r1 r2) s = (accept r1 s) || (accept r2 s)
+accept (Seq r1 r2) s = any (\(l, r) -> (accept r1 l) && (accept r2 r)) (split s)
+accept (Star r)   [] = True
+accept (Star reg)    s = any (\(l, r) -> (accept reg l) && (accept (Star reg) r)) (split s)
+accept Empty      [] = True
+accept _ _ = False
 
 testAccept :: Test
 testAccept = TestList [ 
@@ -373,8 +382,28 @@ testPat = TestList [
   ]
 
 patAccept :: RegExp -> String -> Maybe [String]
-patAccept = error "patAccept: unimplemented"
-
+patAccept (Mark r)    s = if accept r s then Just [s] else Nothing
+patAccept (Char cs) [c] = if member c cs then Just [] else Nothing
+patAccept (Alt r1 r2) s = case (patAccept r1 s, patAccept r2 s) of
+  (Just x, Just y) -> Just (x ++ y)
+  (Just x, Nothing) -> Just x
+  (Nothing, Just y) -> Just y
+  _ -> Nothing
+patAccept (Seq r1 r2) s = if any isJust matches then 
+                            liftM concat $ sequence $ filter isJust matches else
+                            Nothing
+  where
+    matches = map patAcceptSplit (split s)
+    patAcceptSplit (l, r) = liftM2 (++) (patAccept r1 l) (patAccept r2 r)
+patAccept (Star r)   [] = Just []
+patAccept (Star reg)  s = if any isJust matches then 
+                            liftM concat $ sequence $ filter isJust matches else
+                            Nothing
+  where
+    matches = map patAcceptSplit (split s)
+    patAcceptSplit (l, r) = liftM2 (++) (patAccept reg l) (patAccept (Star reg) r)
+patAccept Empty      [] = Just []
+patAccept _ _ = Nothing
 
 
 -- (c)
@@ -384,12 +413,27 @@ match r s = nullable (foldl deriv r s)
 
 -- | `nullable r` return `True` when `r` matches the empty string
 nullable :: RegExp -> Bool
-nullable _ = error "nullable: unimplemented"
+nullable Empty = True
+nullable (Star _) = True
+nullable (Mark r) = nullable r
+nullable (Alt r1 r2) = nullable r1 || nullable r2
+nullable (Seq r1 r2) = nullable r1 && nullable r2
+nullable _ = False
 
 -- |  Takes a regular expression `r` and a character `c`,
 -- and computes a new regular expression that accepts word `w` if `cw` is
 -- accepted by `r`.
 deriv :: RegExp -> Char -> RegExp
-deriv = error "deriv: unimplemented"
+deriv (Mark r) c = deriv r c
+deriv (Char cs) c = if member c cs then Empty else Void
+deriv (Alt r1 r2) c = Alt (deriv r1 c) (deriv r2 c)
+deriv (Seq r1 r2) c = case deriv r1 c of
+  Empty -> r2
+  Void -> Void
+  _ -> (Seq (deriv r1 c) r2)
+deriv (Star r) c = if (match r [c]) then (Star r) else Empty
+deriv Empty _ = Void
+deriv _ _ = Void
+
 
 

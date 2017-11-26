@@ -169,17 +169,37 @@ oneLine = PP.renderStyle (PP.style {PP.mode=PP.OneLineMode}) . pp
 indented :: PP a => a -> String
 indented = PP.render . pp
 
+spacedBraces :: Doc -> Doc
+spacedBraces d = PP.vcat [PP.lbrace, d, PP.rbrace]
+
 instance PP Value where
-  pp _ = error "TBD: pretty printing values"
+  pp (IntVal a) = PP.int a
+  pp (BoolVal True) = PP.text "true"
+  pp (BoolVal False) = PP.text "false"
 
 instance PP Expression where
-  pp _ = error "TBD: pretty printing expressions"
+  pp (Var v) = PP.text v
+  pp (Val v) = pp v
+  pp (Op e1 bop e2) = pp e1 PP.<+> pp bop PP.<+> pp e2
+  -- pp (Op e1@(Var _) bop e2@(Var _)) = PP.hsep [pp e1, pp bop, pp e2]
+  -- pp (Op e1@(Var _) bop e2) = PP.hsep [pp e1, pp bop, PP.parens $ pp e2]
+  -- pp (Op e1@(Val _) bop e2@(Val _)) = PP.hsep [pp e1, pp bop, pp e2]
+  -- pp (Op e1@(Val _) bop e2) = PP.hsep [pp e1, pp bop, PP.parens $ pp e2]
+  -- pp (Op e1 bop e2) = PP.hsep [PP.parens $ pp e1, pp bop, PP.parens $ pp e2]
 
 instance PP Block where
-  pp _ = error "TBD: pretty printing blocks"
+  pp (Block stmts) = PP.vcat $ map pp stmts
 
 instance PP Statement where
-  pp _ = error "TBD: pretty printing statements"
+  pp (Assign var val) = PP.text var PP.<+> PP.char '=' PP.<+> pp val PP.<> PP.semi
+  pp (If cond e1 e2) = PP.text "if" PP.<+>
+    (PP.parens $ pp cond) PP.<+>
+    (spacedBraces $ pp e1) PP.<+>
+    PP.text "else" PP.<+>
+    (spacedBraces $ pp e2)
+  pp (While cond body) = PP.text "while" PP.<+>
+    (PP.parens $ pp cond) PP.<+>
+    (spacedBraces $ pp body)
 
 -- use the C++ precendence level table
 level :: Bop -> Int

@@ -34,7 +34,7 @@ main :: IO ()
 main = do
    _ <- runTestTT (TestList [
           tExec,
-          tExp, tStmt, tStmtIndent, tAssoc, tPrec, tTestFiles,
+          tPPrint,
           tParseExp, tWS, tParseBlock, tParseStmt, tParseAssoc,
           tParsePrec, tParseFiles])
    putStrLn "Testing step exec property..."
@@ -70,6 +70,8 @@ tExecTimes = "exec wTimes" ~: exec wTimes Map.empty ~?=
 
 -- Simple tests
 
+tPPrint = TestList [tExp, tStmt, tStmtIndent, tAssoc, tPrec, tTestFiles]
+
 zeroV,oneV,twoV,threeV,trueV,falseV :: Expression
 zeroV  = Val (IntVal 0)
 oneV   = Val (IntVal 1)
@@ -103,9 +105,9 @@ tStmt = "pp stmt oneLine" ~: TestList [
 
 tStmtIndent :: Test
 tStmtIndent = "pp stmt indent" ~: TestList [
-      indented (If (Val (BoolVal True)) (Block[]) (Block[])) ~?=
+      indented (If (Val (BoolVal True)) skip skip) ~?=
           "if (true) {\n} else {\n}",
-      indented (While (Val (BoolVal True)) (Block []) ) ~?=
+      indented (While (Val (BoolVal True)) skip) ~?=
           "while (true) {\n}" ]
 
 tTestFiles :: Test

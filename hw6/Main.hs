@@ -181,6 +181,7 @@ instance PP Expression where
   pp (Var v) = PP.text v
   pp (Val v) = pp v
   pp (Op e1 bop e2) = pp e1 PP.<+> pp bop PP.<+> pp e2
+  -- TODO: figure out parentheses
   -- pp (Op e1@(Var _) bop e2@(Var _)) = PP.hsep [pp e1, pp bop, pp e2]
   -- pp (Op e1@(Var _) bop e2) = PP.hsep [pp e1, pp bop, PP.parens $ pp e2]
   -- pp (Op e1@(Val _) bop e2@(Val _)) = PP.hsep [pp e1, pp bop, pp e2]
@@ -212,7 +213,10 @@ level _      = 3    -- comparison operators
 ------------------------------------------------------------------------
 
 step :: Block -> State Store Block
-step _ = undefined
+step (Block (stmt:stmts)) = do
+  evalS stmt
+  return $ Block stmts
+step emptyBlock = return emptyBlock
 
 -- | Is this block completely evaluated?
 final :: Block -> Bool
@@ -221,11 +225,17 @@ final _          = False
 
 -- | Evaluate this block to completion
 execStep :: Block -> Store -> Store
-execStep = undefined
+execStep block store
+  | final block = store
+  | otherwise = S.execState (step block) store
 
 -- | Evaluate this block for a specified number of steps
 boundedStep :: Int -> Block -> State Store Block
-boundedStep = undefined
+boundedStep 0 b = return b
+boundedStep n b = do
+  rest <- step b
+  boundedStep (n - 1) rest
+
 
 stepper :: Block -> IO ()
 stepper b = go b where
@@ -235,7 +245,8 @@ stepper b = go b where
     str <- getLine
     case str of
       "x" -> return ()    -- quit the stepper
-
+      -- how to pass store from one step to the next?
+      -- "n" -> stepper $ evalState (step block)
       _   -> putStrLn "?" >> go block -- unknown command
   putBlock :: Block -> IO ()
   putBlock (Block [])    = putStrLn "done"
@@ -247,31 +258,43 @@ valueP :: P.Parser Value
 valueP = intP <|> boolP
 
 intP :: P.Parser Value
-intP = error "TBD"
+intP = fmap IntVal P.int
 
 constP :: String -> a -> P.Parser a
-constP _ _ = error "TBD"
+constP s x = fmap (const x) (P.string s)
 
 boolP :: P.Parser Value
-boolP = error "TBD"
+boolP = P.choice [(constP "true" (BoolVal True)), (constP "false" (BoolVal False))]
 
 opP :: P.Parser Bop
-opP = error "TBD"
+opP = P.choice [(constP "+" Plus),
+                (constP "-" Minus),
+                (constP "*" Times),
+                (constP "/" Divide),
+                (constP ">" Gt),
+                (constP ">=" Ge),
+                (constP "<" Lt),
+                (constP "<=" Le)]
 
 varP :: P.Parser Variable
 varP = some P.lower
 
+-- return a parser that runs the input parser and then skips over any whitespace
 wsP :: P.Parser a -> P.Parser a
-wsP p = error "TBD"
+wsP p = p <* some P.space
 
+-- todo: handle precendence, whitespace.
+-- also currently parsing "1 + 2" will just parse "1" and return
 exprP :: P.Parser Expression
-exprP = error "TBD"
-
-
+exprP = P.choice [fmap Val valueP,
+                  fmap Var varP,
+                  pure Op <*> exprP <*> opP <*> exprP]
 
 statementP :: P.Parser Statement
-statementP = error "TBD"
+statementP = P.choice [pure Assign <*> varP <*> exprP,
+                       pure If <*> exprP <*> toplevelP <*> toplevelP,
+                       pure While <*> exprP <*> toplevelP]
 
 toplevelP :: P.Parser Block
-toplevelP = error "TBD"
+toplevelP = fmap Block $ some statementP
 

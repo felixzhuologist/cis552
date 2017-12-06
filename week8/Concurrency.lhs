@@ -403,7 +403,7 @@ Now, here is an infinite loop that just prints its argument over and
 over.
 
 > loop :: OutputMonad m => String -> m ()
-> loop = undefined
+> loop s = write s >> loop s
 
 If we run this loop from the ghci toplevel (in the IO monad) we don't get
 to do anything else.
@@ -530,7 +530,11 @@ in the IO monad.)
 > instance MVarMonad IO where
 >   newMVar       = newIORef Nothing
 >   writeMVar v a = writeIORef v (Just a)
->   takeMVar = undefined
+>   takeMVar v = do
+>     memVal <- readIORef v
+>     case memVal of
+>       (Just x) -> writeIORef v Nothing >> return (Just x)
+>       Nothing -> return Nothing  
 
 We are justified in calling these MVars because all of the operations happen
 atomically.
@@ -545,7 +549,11 @@ Next let's define a blocking read function for MVars, which waits
 operation *requires* concurrency to do anything interesting...
 
 > readMVar :: (MVarMonad m) => MVar a -> m a
-> readMVar = undefined
+> readMVar v = do
+>   memVal <- takeMVar v
+>   case memVal of
+>     (Just x) -> return x
+>     Nothing -> readMVar v
 
 Now here is an example using an MVar to implement a simple form of
 message passing. We have two threads that communicate via
